@@ -1,4 +1,5 @@
 # frozen_string_literal: true
+
 require 'pry'
 require 'pry-nav'
 
@@ -47,7 +48,7 @@ module Mastermind
   end
 
   class Game
-    def initialize(codemaker, codebreaker, no_dupes: false)
+    def initialize(codemaker, codebreaker)
       @codemaker   = codemaker
       @codebreaker = codebreaker
 
@@ -59,30 +60,23 @@ module Mastermind
       @turns_remaining = 12
     end
 
-    attr_reader :code, :codebreaker
-    attr_accessor :guesses, :feedback
-
-    def game_over?
-      code_cracked || turns_remaining.zero?
-    end
-
-    # private
-
-    attr_accessor :turns_remaining, :code_cracked
-
-    def format_pegs(pegs)
-      pegs.map { |peg| "(#{CODE_PEGS.key(peg)})#{peg.ljust(6, ' ')}" }.join(' | ')
-    end
-
     def print_board
       puts "| #{BOARD_HEADERS.map { |header| header.ljust(9, ' ') }.join(' | ')} |"
       print_guesses
     end
 
-    def print_guesses
-      guesses.zip(feedback).each do |guess, fb|
-        puts "| #{format_pegs(guess)} | #{fb.join.ljust(9, ' ')} |"
-      end
+    def game_over?
+      code_cracked || turns_remaining.zero?
+    end
+
+    def add_codebreaker_guess
+      print_selection_menu
+      guess = collect_guess
+
+      turn_feedback = check_guess_for_match(guess)
+      guesses << guess.map { |peg_key| CODE_PEGS[peg_key] }
+      feedback << turn_feedback
+      self.turns_remaining -= 1
     end
 
     def print_outcome
@@ -94,13 +88,28 @@ module Mastermind
         puts "Sorry, you're out of turns..."
       end
 
-      puts "The code was:"
-      puts "| #{format_pegs(self.code)} |"
+      puts 'The code was:'
+      puts "| #{format_pegs(code)} |"
+    end
+
+    private
+
+    attr_reader :code, :codebreaker
+    attr_accessor :turns_remaining, :code_cracked, :guesses, :feedback
+
+    def format_pegs(pegs)
+      pegs.map { |peg| "(#{CODE_PEGS.key(peg)})#{peg.ljust(6, ' ')}" }.join(' | ')
+    end
+
+    def print_guesses
+      guesses.zip(feedback).each do |guess, fb|
+        puts "| #{format_pegs(guess)} | #{fb.join.ljust(9, ' ')} |"
+      end
     end
 
     def print_selection_menu
-      puts "Enter the number corresponding to each color, separated by spaces (e.g., 1 2 3 4):"
-      CODE_PEGS.each { |key, color| puts "#{key}: #{color}"}
+      puts 'Enter the number corresponding to each color, separated by spaces (e.g., 1 2 3 4):'
+      CODE_PEGS.each { |key, color| puts "#{key}: #{color}" }
     end
 
     def collect_guess
@@ -112,28 +121,12 @@ module Mastermind
       guess
     end
 
-    def add_codebreaker_guess
-      print_selection_menu
-      guess = collect_guess
-
-      turn_feedback = check_guess_for_match(guess)
-      self.guesses << guess.map { |peg_key| CODE_PEGS[peg_key] }
-      self.feedback << turn_feedback
-      self.turns_remaining -= 1
-    end
-
     def valid_guess?(guess)
       valid_selections = CODE_PEGS.keys
       guess.size.eql?(4) && guess.all? { |peg| valid_selections.include? peg }
     end
 
-    def create_key_pegs(outcome)
-      outcome.inject([]) do |accum, (key, count)|
-        accum += Array.new(count, KEY_PEGS[key])
-      end
-    end
-
-    def check_guess_for_match(guess)
+    def create_match_score(guess)
       outcome = { spot_match: 0, color_match: 0, no_match: 0 }
       guess.each_with_index do |peg, index|
         peg = CODE_PEGS[peg]
@@ -145,6 +138,17 @@ module Mastermind
           outcome[:no_match] += 1
         end
       end
+      outcome
+    end
+
+    def create_key_pegs(outcome)
+      outcome.inject([]) do |accum, (key, count)|
+        accum + Array.new(count, KEY_PEGS[key])
+      end
+    end
+
+    def check_guess_for_match(guess)
+      outcome = create_match_score(guess)
 
       self.code_cracked = true if outcome[:spot_match].eql? 4
       create_key_pegs(outcome)
@@ -172,10 +176,9 @@ module Mastermind
   end
 end
 
-code = Mastermind.generate_random_code()
+code = Mastermind.generate_random_code
 codemaker = Mastermind::Codemaker.new(code)
 codebreaker = Mastermind::Codebreaker.new
-
 
 loop do
   game = Mastermind::Game.new(codemaker, codebreaker)
